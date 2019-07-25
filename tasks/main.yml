@@ -72,22 +72,32 @@
   check_mode: no
   when: ansible_os_family == "RedHat"
 
-- name: Clean up old backups from ferm.d on RedHat
-  file: 
-    path: "{{ item }}"
-    state: absent
-  with_fileglob: 
-    - /etc/ferm/ferm.d/*~
-    - /etc/ferm/ferm.d/*.bak
+- name: Find ferm backup files on RedHat
+  find:
+    paths:      "/etc/ferm/ferm.d/"
+    patterns:   "*~,*.bak"
+  register: ferm_backup_files
   when: ansible_os_family == "RedHat"
 
-- name: Clean up old backups from ferm.d on non-RedHat
-  file: 
-    path: "{{ item }}"
+- name: Remove the found ferm backup files on RedHat
+  file:
+    path: "{{ item.path }}"
     state: absent
-  with_fileglob: 
-    - /etc/ferm.d/*~
-    - /etc/ferm/ferm.d/*.bak
+  with_items: "{{ ferm_backup_files.files }}"
+  when: ansible_os_family == "RedHat"
+
+- name: Find ferm backup files on non-RedHat
+  find:
+    paths:      "/etc/ferm.d/,/etc/ferm/ferm.d/"
+    patterns:   "*~,*.bak"
+  register: ferm_backup_files_non-redhat
+  when: ansible_os_family != "RedHat"
+
+- name: Remove the found ferm backup files
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  with_items: "{{ ferm_backup_files_non-redhat.files }}"
   when: ansible_os_family != "RedHat"
 
 - name: Ferm | Create the default ferm conf files on non-RedHat
