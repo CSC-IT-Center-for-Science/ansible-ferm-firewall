@@ -163,7 +163,8 @@
   service:
     name: ferm
     state: restarted
-  when: fermreloaded is defined
+  changed_when: False
+  register: fermreloaded
 
 - name: Ferm | Enable ferm on boot
   service:
@@ -174,4 +175,4 @@
   service:
     name: fail2ban
     state: restarted
-  when: fermreloaded is defined and ferm_fail2ban
+  when: fermreloaded.changed and ferm_fail2ban
