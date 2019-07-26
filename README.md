@@ -1,150 +1,203 @@
-[![Build Status](https://travis-ci.org/CSCfi/ansible-ferm-firewall.svg)](https://travis-ci.org/CSCfi/ansible-ferm-firewall)
-Ferm-Firewall
+Simplistic ansible role to manage Ferm
 ==========
 
-Manage and configure the ferm firewall. Send separate configuration file per groups.
-You may need to change ansible `hash` from replace to merge .
+Manage and configure the ferm firewall.
+
+With this role you can manage and create a set of global firewall rules and merge them with:
+- Firewall rules for a specific group
+- Firewall rules for a specific host
+
 
 Requirements
 ------------
 
- - ferm package
+hash\_behaviour set to merge in ansible.cfg
+
+```ini
+[defaults]
+hash_behaviour = merge
+```
+
 
 Configuration files and variables structure
 -------------------------------------------
 
- - roles/ansible-role-ferm-firewall/defaults/main.yml
-  - this is used in case there is no ferm\_rules defined any where else
 
 Example configuration:
 
- - group\_vars/all/all
-  - this can have a ferm\_rules defined - used on all hosts
- - group\_vars/group/group.yml
-  - this can have a ferm\_rules\_extra defined - used in addition to the ferm\_rules
+`group_vars/all.yml` or `roles/ferm/vars/main.yml` contains your global firewall rules that will apply to all your hosts
+  
+`group_vars/webservers.yml` Firewall rules in this file will only apply to members of the `webservers` group.
+  
+`host_vars/webserver01.yml` can contain rules for a specific host.
+
 
 Role Variables
 --------------
-To configure ferm, you need to provide a key to associate a set of rules to a role/software. This way, rules splited in multiple var-files won't overwrite each other.
-By default, if domains isn't defined, it will apply rules to ip6 and ip domains.
-Configuration exemple:
+Each key under `ferm_rules` will be created as a configuration file for ferm under `/etc/ferm/ferm.d`. Files in that directory will be handled in alphabetical order. To keep things simple, I maintain the following naming scheme:
 
+- 01-policies
+- 02-icmp
+- 10-mgmt
+- 30-webserver01
+- 50-webservers
+- 99-reject-all
+
+Duplicate names will be overridden in the order of variable importancy.
+
+Examples
+========
+
+Below is a set of firewall rules that will apply to all your servers, together with some firewall rules that will only apply to members of a group called `webservers` and some firewall rules that only apply to a specific host.
+
+Example inventory:
+```
+[all]
+server1
+server2
+server3
+docker01
+docker02
+webserver01
+webserver02
+
+[webservers]
+webserver01
+webserver02
+```
+
+Global firewall rules
+---------------------
+
+In `group_vars/all.yml` or `roles/ferm/vars/main.yml`:
 ```yaml
 ---
-# Your default ferm rules for all hosts
 ferm_rules:
-# Create a file in /etc/ferm/ferm.d/default.conf
-  default:
+  01-policies:
     - chain: INPUT
+      domains: [ip, ip6]
       rules:
-        - {rule: "policy DROP;",  comment: "global policy"}
-        - {rule: "mod state state INVALID DROP;", comment: "connection tracking: drop"}
-        - {rule: "mod state state (ESTABLISHED RELATED) ACCEPT;", comment: "connection tracking"}
-        - {rule: "interface lo ACCEPT;", comment: "allow local packet"}
-        - {rule: "proto icmp ACCEPT;", comment: "respond to ping"}
-        - {rule: "proto tcp dport ssh ACCEPT;", comment: "allow SSH connections"}
-    # Different set of rules on ip / ip6
+        - rule: policy ACCEPT
+        - rule: mod state state INVALID DROP
+          comment: "Drop invalid packets"
+        - rule: mod state state (ESTABLISHED RELATED) ACCEPT
+          comment: "Allow already established sessions"
+        - rule: interface lo ACCEPT
+          comment: "Allow traffic from localhost interface"
+
     - chain: OUTPUT
-      domains:
-        - ip
+      domains: [ip, ip6]
       rules:
-        - rule: "policy ACCEPT;"
-          comment: global policy
-    - chain: OUTPUT
-      domains:
-        - ip6
-      rules:
-        - rule: "policy DROP;"
-          comment: global policy ip6
+        - rule: policy ACCEPT
 
     - chain: FORWARD
       domains: [ip, ip6]
       rules:
-        - rule: "policy DROP;"
-          comment: global policy
-        - rule: "mod state state INVALID DROP;"
-          comment: "connection tracking: drop"
-        - rule: "mod state state (ESTABLISHED RELATED) ACCEPT;"
-          comment: "connection tracking"
+        - rule: policy DROP
 
+  02-icmp:
+    - chain: INPUT
+      domains: [ip]
+      rules:
+        - rule: proto icmp icmp-type (3 8 11) ACCEPT
+          comment: "Allow dest unreachable, ping and time exceeded messages"
+    - chain: INPUT
+      domains: [ip]
+      rules:
+        - rule: proto ipv6-icmp ACCEPT
+          comment: "Allow all ipv6 icmp messages"
+
+  10-mgmt:
+    - chain: INPUT
+      domains: [ip, ip6]
+      rules:
+        - rule: proto tcp dport ssh saddr (192.168.178.0/28 2001:db8::/64) ACCEPT
+          comment: "Allow SSH from my trusted IPs"
+          
+  99-reject:
+    - chain: INPUT
+      domains: [ip, ip6]
+      rules:
+        - rule: REJECT reject-with icmp-host-prohibited
 ```
 
-Dependencies
-------------
- - None
+Group firewall rules
+--------------------
 
-Example Playbook
-----------------
-Ferm rules are hash instead of array. The main reason is to be able to merge hashes when configure same host with different roles.
-
-Inventory:
-```
-[mongodb]
-MachineA
-[rabbitmq]
-MachineA
-```
-Playbook:
+The following rules are applied to all members of the `webservers` group. They are placed in `group_vars/webservers.yml`:
 ```yaml
 ---
-- hosts: mongodb
-  vars:
-    - ferm_rules:
-        mongodb:
-          - chain: INPUT
-            rules:
-              - {rule: "proto tcp dport (27017) ACCEPT;", comment: "MongoDB mongo shard/repl servers"}
-              - {rule: "proto tcp dport (27701 27702 27703) ACCEPT;", comment: "MongoDB mongo configurati\
-on servers" }
-              - {rule: "proto tcp dport (27801) ACCEPT;", comment: "MongoDB mongo router server (mongos)"\
-}
-  roles:
-    - ferm-firewall
 
-- hosts: rabbitmq
-  vars:
-    - ferm_rules:
-        rabbitmq:
-          - chain: INPUT
-            domains: [ip]
-            rules:
-              - rule: "proto tcp dport (5672) ACCEPT;"
-                comment: "Rabbitmq-server"
-  roles:
-    - ferm-firewall
-
+ferm_rules:
+  50-webservers:
+    - chain: INPUT
+      domains: [ip, ip6]
+      rules:
+        - rule: proto tcp dport (http https) ACCEPT
+          comment: "Allow HTTP and HTTPS"
+        - rule: proto tcp dport (8080 8443) saddr (192.168.178.0/24 198.51.100.0/24 2001:db8::/48) ACCEPT
+          comment: "Allow developers to our admin panels"
 ```
-Result:
 
- - /etc/ferm/ferm.d/mongodb.conf
+Our webservers will have these ports opened on top of the global firewall rules.
+
+
+Host specific firewall rules
+----------------------------
+
+Webserver01 needs a temporary firewall rule, we can place this in `host_vars/webserver01.yml`:
+```yaml
+---
+
+ferm_rules:
+  30-webserver01:
+    - chain: INPUT
+      domains: [ip, ip6]
+      rules:
+        - rule: proto tcp dport (ssh) saddr 198.51.100.128/25 2001:db8::beef:/64) ACCEPT
+          comment: "Temporary senior developers SSH access"
+```
+
+
+Result
+------
+
+`webserver02` gets an additional rule file on top of the global default called:
+
+/etc/ferm/ferm.d/50-webservers
 ```conf
 domain (ip ip6) table filter {
   chain INPUT {
-     # MongoDB mongo shard/repl servers
-     proto tcp dport (27017) ACCEPT;
+     # Allow HTTP/HTTPS
+     mod comment comment "Allow HTTP and HTTPS" proto tcp dport (http https) ACCEPT;
 
-     # MongoDB mongo configuration servers
-     proto tcp dport (27701 27702 27703) ACCEPT;
-
-     # MongoDB mongo router server (mongos)
-     proto tcp dport (27801) ACCEPT;
-
+     # Allow developers to dev sites
+     mod comment comment "Allow developers to dev sites" proto tcp dport (8080 8443) saddr (192.168.178.0/24 198.51.100.0/24 2001:db8::/48) ACCEPT;
     }
 }
 ```
- -  /etc/ferm/ferm.d/rabbitmq.conf
+
+`webserver01` gets two files on top of the global default:
+
+/etc/ferm/ferm.d/50-webservers
 ```conf
-domain (ip ) table filter {
+domain (ip ip6) table filter {
   chain INPUT {
-     # Rabbitmq-server
-     proto tcp dport (5672) ACCEPT;
+     # Allow HTTP/HTTPS
+     mod comment comment "Allow HTTP/HTTPS" proto tcp dport (http https) ACCEPT;
 
+     # Allow developers to dev sites
+     mod comment comment "Allow developers to our admin panels" proto tcp dport (8080 8443) saddr (192.168.178.0/24 198.51.100.0/24 2001:db8::/48) ACCEPT;
     }
 }
 ```
 
-
-License
--------
-
-MIT
+/etc/ferm/ferm.d/30-webserver01
+```conf
+domain (ip ip6) table filter {
+  chain INPUT {
+     # Allow senior developers SSH access
+     mod comment comment "Temporary senior developers SSH access" proto tcp dport (ssh) saddr (198.51.100.128/25 2001:db8::beef:/64) ACCEPT;
+    }
+}
+```

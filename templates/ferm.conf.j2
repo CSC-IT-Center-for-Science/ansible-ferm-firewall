@@ -1,17 +1,3 @@
-#{{ ansible_managed }}
-{% for ferm in item.value %}
- {% if ferm.domains is defined %}
-domain ({% for domain in ferm.domains %}{{domain}} {% endfor %}) table {{ferm.table|default('filter')}} {
- {% else %}
-{% if ferm.table|default('filter') == 'filter' %}domain (ip ip6) {% endif %}table {{ferm.table|default('filter')}} {
-{% endif %}
-  chain {{ferm.chain}} {
-{% for rule in ferm.rules %}
-   # {{rule.comment}}
-   {{rule.rule}}
+# {{ ansible_managed }}
 
- {% endfor %}
- }
-}
-
-{% endfor %}
+@include "/etc/ferm/ferm.d/";

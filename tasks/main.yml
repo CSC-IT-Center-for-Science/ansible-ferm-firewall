@@ -1,164 +1,111 @@
 ---
-# This Playbook configure firewall 'ferm'
-- name: Ferm | Install Ferm
+
+- name: Install requirements
   action:
     module: "{{ ansible_pkg_mgr }}"
-    name: ferm
+    name: "{{ item }}"
     state: present
+  with_items:
+    - ferm
+    - iptables
 
-- name: Ferm | Install iptables
-  action:
-    module: "{{ ansible_pkg_mgr }}"
-    name: iptables
-    state: present
-
-# https://github.com/ansible/ansible-modules-core/issues/593
-# msg: no service or tool found for: firewalld
-- name: Ferm | Disable firewalld
+- name: Disable other iptable frontends
   service:
     name: "{{ item }}"
     state: stopped
     enabled: no
-  with_items: "{{ disable_other_firewalls }}"
+  with_items: "{{ ferm_disable_firewalls }}"
   ignore_errors: True
 
-- name: Ferm | Display rules var
+- name: Display rules var
   debug:
     var: ferm_rules
     verbosity: 1
 
-- name: Ferm | Make sure the directory for firewall rules exist
-  file:
-    path: /etc/ferm
-    state: directory
-    owner: root
-    group: root
-
-- name: Ferm | Create config directory for non-RedHat
-  file:
-    path: /etc/ferm.d
-    state: directory
-    owner: root
-    group: root
-  when: ansible_os_family != "RedHat"
-
-- name: Ferm | Create config directory for RedHat
+- name: Create config directories
   file:
     path: /etc/ferm/ferm.d
     state: directory
     owner: root
     group: root
-  when: ansible_os_family == "RedHat"
 
-- name: Ferm | Include ferm.d directory on non-RedHat
-  lineinfile:
+- name: Configure ferm.conf
+  template:
+    src: ferm.conf.j2
     dest: /etc/ferm/ferm.conf
-    line: '@include "/etc/ferm.d/";'
-    regexp: '^\@include'
+    mode: 0655
+    owner: root
+    group: root
     backup: yes
-    insertbefore: BOF
-    create: yes
-  check_mode: no
-  when: ansible_os_family != "RedHat"
+  notify:
+    - reload ferm
 
-- name: Ferm | Include ferm.d directory on RedHat
-  lineinfile:
-    dest: /etc/ferm.conf
-    line: '@include "/etc/ferm/ferm.d/";'
-    regexp: '^\@include'
-    backup: yes
-    insertbefore: BOF
-    create: yes
-  check_mode: no
-  when: ansible_os_family == "RedHat"
+- name: Register ferm.d contents
+  shell: ls -A1 /etc/ferm/ferm.d/
+  register: fermd_contents
+  changed_when: False
 
-- name: Clean up old backups from ferm.d on RedHat
-  file: 
-    path: "{{ item }}"
+- debug:
+    var: fermd_contents
+    verbosity: 1
+
+- debug:
+    var: ferm_rule_files
+    verbosity: 1
+
+- name: Clean up unmanaged files from ferm.d
+  file:
+    path: "/etc/ferm/ferm.d/{{ item }}"
     state: absent
-  with_fileglob: 
-    - /etc/ferm/ferm.d/*~
-    - /etc/ferm/ferm.d/*.bak
-  when: ansible_os_family == "RedHat"
+  with_items: "{{ fermd_contents.stdout_lines }}"
+  when: item not in ferm_rules
 
-- name: Clean up old backups from ferm.d on non-RedHat
-  file: 
-    path: "{{ item }}"
-    state: absent
-  with_fileglob: 
-    - /etc/ferm.d/*~
-    - /etc/ferm/ferm.d/*.bak
-  when: ansible_os_family != "RedHat"
-
-- name: Ferm | Create the default ferm conf files on non-RedHat
+- name: Create the default ferm conf files
   template:
-    src: ferm.conf.j2
-    dest: "/etc/ferm.d/{{item.key}}.conf"
+    src: rules.conf.j2
+    dest: "/etc/ferm/ferm.d/{{item.key}}"
     mode: 0655
     owner: root
     group: root
     backup: no
   with_dict: "{{ ferm_rules }}"
+  loop_control:
+    label: "{{ item.key }}"
   notify:
     - reload ferm
-  when: ansible_os_family != "RedHat"
 
-- name: Ferm | Create the default ferm conf files on RedHat
+- name: Create extra ferm conf files
   template:
-    src: ferm.conf.j2
-    dest: "/etc/ferm/ferm.d/{{item.key}}.conf"
-    mode: 0655
-    owner: root
-    group: root
-    backup: no
-  with_dict: "{{ ferm_rules }}"
-  notify:
-    - reload ferm
-  when: ansible_os_family == "RedHat"
-
-- name: Ferm | Create extra ferm conf files on non-RedHat
-  template:
-    src: ferm.conf.j2
-    dest: "/etc/ferm.d/{{item.key}}.conf"
+    src: rules.conf.j2
+    dest: "/etc/ferm/ferm.d/{{item.key}}"
     mode: 0655
     owner: root
     group: root
     backup: no
   with_dict: "{{ ferm_rules_extra | default({}) }}"
+  loop_control:
+    label: "{{ item.key }}"
   notify:
     - reload ferm
-  when: ansible_os_family != "RedHat" and ferm_rules_extra is defined
-
-- name: Ferm | Create extra ferm conf files on RedHat
-  template:
-    src: ferm.conf.j2
-    dest: "/etc/ferm/ferm.d/{{item.key}}.conf"
-    mode: 0655
-    owner: root
-    group: root
-    backup: no
-  with_dict: "{{ ferm_rules_extra | default({}) }}"
-  notify:
-    - reload ferm
-  when: ansible_os_family == "RedHat" and ferm_rules_extra
+  when: ferm_rules_extra is defined
 
 - name: Flush handlers
   meta: flush_handlers
 
-- name: Ferm | Reload ferm
+- name: Reload ferm
   service:
     name: ferm
     state: restarted
-  changed_when: False
-  register: fermreloaded
+  when: fermreloaded is defined
 
-- name: Ferm | Enable ferm on boot
+- name: Enable ferm on boot
   service:
     name: ferm
     enabled: yes
 
-- name: Ferm | If ferm_fail2ban is True - restart fail2ban as well if ferm is reloaded
+- name: Reload services
   service:
-    name: fail2ban
+    name: "{{ item }}"
     state: restarted
-  when: fermreloaded.changed and ferm_fail2ban
+  with_items: "{{ ferm_reload_services }}"
+  when: fermreloaded is defined and ferm_reload_services is defined
