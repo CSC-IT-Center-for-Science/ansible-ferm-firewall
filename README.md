@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/CSCfi/ansible-ferm-firewall.svg?branch=master)](https://travis-ci.org/CSCfi/ansible-ferm-firewall)
+
 Simplistic ansible role to manage Ferm
 ==========
 
