@@ -25,34 +25,14 @@
     owner: root
     group: root
 
-- name: Ferm | Create config directory for non-RedHat
-  file:
-    path: /etc/ferm.d
-    state: directory
-    owner: root
-    group: root
-  when: ansible_os_family != "RedHat"
-
-- name: Ferm | Create config directory for RedHat
+- name: Ferm | Create config directory
   file:
     path: /etc/ferm/ferm.d
     state: directory
     owner: root
     group: root
-  when: ansible_os_family == "RedHat"
 
-- name: Ferm | Include ferm.d directory on non-RedHat
-  lineinfile:
-    dest: /etc/ferm/ferm.conf
-    line: '@include "/etc/ferm.d/";'
-    regexp: '^\@include'
-    backup: yes
-    insertbefore: BOF
-    create: yes
-  check_mode: no
-  when: ansible_os_family != "RedHat"
-
-- name: Ferm | Include ferm.d directory on RedHat
+- name: Ferm | Include ferm.d directory
   lineinfile:
     dest: /etc/ferm.conf
     line: '@include "/etc/ferm/ferm.d/";'
@@ -61,50 +41,20 @@
     insertbefore: BOF
     create: yes
   check_mode: no
-  when: ansible_os_family == "RedHat"
 
-- name: Find ferm backup files on RedHat
+- name: Find ferm backup files
   find:
     paths:      "/etc/ferm/ferm.d/"
     patterns:   "*~,*.bak"
   register: ferm_backup_files
-  when: ansible_os_family == "RedHat"
-
-- name: Remove the found ferm backup files on RedHat
-  file:
-    path: "{{ item.path }}"
-    state: absent
-  with_items: "{{ ferm_backup_files.files }}"
-  when: ansible_os_family == "RedHat"
-
-- name: Find ferm backup files on non-RedHat
-  find:
-    paths:      "/etc/ferm.d/,/etc/ferm/ferm.d/"
-    patterns:   "*~,*.bak"
-  register: ferm_backup_files_non-redhat
-  when: ansible_os_family != "RedHat"
 
 - name: Remove the found ferm backup files
   file:
     path: "{{ item.path }}"
     state: absent
-  with_items: "{{ ferm_backup_files_non-redhat.files }}"
-  when: ansible_os_family != "RedHat"
+  with_items: "{{ ferm_backup_files.files }}"
 
-- name: Ferm | Create the default ferm conf files on non-RedHat
-  template:
-    src: ferm.conf.j2
-    dest: "/etc/ferm.d/{{item.key}}.conf"
-    mode: 0655
-    owner: root
-    group: root
-    backup: no
-  with_dict: "{{ ferm_rules }}"
-  notify:
-    - reload ferm
-  when: ansible_os_family != "RedHat"
-
-- name: Ferm | Create the default ferm conf files on RedHat
+- name: Ferm | Create the default ferm conf files
   template:
     src: ferm.conf.j2
     dest: "/etc/ferm/ferm.d/{{item.key}}.conf"
@@ -115,22 +65,8 @@
   with_dict: "{{ ferm_rules }}"
   notify:
     - reload ferm
-  when: ansible_os_family == "RedHat"
 
-- name: Ferm | Create extra ferm conf files on non-RedHat
-  template:
-    src: ferm.conf.j2
-    dest: "/etc/ferm.d/{{item.key}}.conf"
-    mode: 0655
-    owner: root
-    group: root
-    backup: no
-  with_dict: "{{ ferm_rules_extra | default({}) }}"
-  notify:
-    - reload ferm
-  when: ansible_os_family != "RedHat" and ferm_rules_extra is defined
-
-- name: Ferm | Create extra ferm conf files on RedHat
+- name: Ferm | Create extra ferm conf files
   template:
     src: ferm.conf.j2
     dest: "/etc/ferm/ferm.d/{{item.key}}.conf"
@@ -141,7 +77,7 @@
   with_dict: "{{ ferm_rules_extra | default({}) }}"
   notify:
     - reload ferm
-  when: ansible_os_family == "RedHat" and ferm_rules_extra
+  when: ferm_rules_extra
 
 - name: Flush handlers
   meta: flush_handlers
