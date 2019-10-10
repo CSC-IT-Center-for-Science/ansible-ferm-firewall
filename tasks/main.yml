@@ -18,13 +18,6 @@
     var: ferm_rules
     verbosity: 1
 
-- name: Ferm | Make sure the directory for firewall rules exist
-  file:
-    path: /etc/ferm
-    state: directory
-    owner: root
-    group: root
-
 - name: Ferm | Create config directory
   file:
     path: /etc/ferm/ferm.d
@@ -32,7 +25,7 @@
     owner: root
     group: root
 
-- name: Setup /etc/ferm.conf
+- name: Link /etc/ferm.conf to /etc/ferm/ferm.conf
   file:
     src: /etc/ferm.conf
     dest: /etc/ferm/ferm.conf
@@ -40,7 +33,6 @@
     group: root
     state: link
     force: yes
-
 
 - name: Ferm | Include ferm.d directory
   lineinfile:
@@ -108,3 +100,9 @@
     name: fail2ban
     state: restarted
   when: fermreloaded is defined and ferm_fail2ban
+
+- name: Make sure Ferm is running
+  service:
+    name: ferm
+    state: started
+
