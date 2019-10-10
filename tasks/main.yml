@@ -32,9 +32,14 @@
     owner: root
     group: root
 
+- name: Remove /etc/ferm.conf if exists
+  file:
+    path: /etc/ferm.conf
+    state: absent
+
 - name: Ferm | Include ferm.d directory
   lineinfile:
-    dest: /etc/ferm.conf
+    dest: /etc/ferm/ferm.conf
     line: '@include "/etc/ferm/ferm.d/";'
     regexp: '^\@include'
     backup: yes
