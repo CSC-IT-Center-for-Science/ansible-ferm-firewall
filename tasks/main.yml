@@ -32,10 +32,14 @@
     owner: root
     group: root
 
-- name: Remove /etc/ferm.conf if exists
+- name: Setup /etc/ferm.conf
   file:
-    path: /etc/ferm.conf
-    state: absent
+    src: /etc/ferm.conf
+    dest: /etc/ferm/ferm.conf
+    owner: root
+    group: root
+    state: link
+
 
 - name: Ferm | Include ferm.d directory
   lineinfile:
