@@ -1,5 +1,4 @@
-[![Build Status](https://travis-ci.org/CSCfi/ansible-ferm-firewall.svg)](https://travis-ci.org/CSCfi/ansible-ferm-firewall)
-Ferm-Firewall
+Simplistic ansible role to manage Ferm
 ==========
 
 Manage and configure the ferm firewall. Send separate configuration file per groups.
